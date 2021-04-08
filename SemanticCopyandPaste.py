@@ -66,7 +66,7 @@ class SemanticCopyandPaste(A.DualTransform):
         
         
         self.targetClass = random.randint(1,self.nClass-1) # not aug background class
-        print('target = ', self.targetClass)
+#         print('target = ', self.targetClass)
         
         ret = True
         while ret:
