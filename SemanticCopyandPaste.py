@@ -13,9 +13,11 @@ class SemanticCopyandPaste(A.DualTransform):
                  nClass, 
                  path2rgb, 
                  path2mask, 
-                 shift_x_limit = None, 
-                 shift_y_limit = None, 
-                 always_apply=False, 
+                 shift_x_limit = [0,0], 
+                 shift_y_limit = [0,0], 
+                 rotate_limit  = [0,0],
+                 scale         = [0,0],
+                 always_apply  = False, 
                  p=0.5):
         super().__init__(always_apply=always_apply, p=p)
         self.nClass     = nClass
@@ -33,14 +35,20 @@ class SemanticCopyandPaste(A.DualTransform):
         self.imgCol     = None  # for image translation
         self.shift_x_limit = shift_x_limit
         self.shift_y_limit = shift_y_limit
-        self.translated_mask = None
+        self.rotate_limit  = rotate_limit
+        self.scale         = scale
+        self.translated_mask    = None
+        self.translation_matrix = None
+        self.counter            = 0
         
         assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
         assert self.nClass > 0, "Incorrect class number"
         if shift_x_limit is not None:
-            assert type(shift_x_limit) == list and type(shift_y_limit) == list
-        
-    
+            assert type(shift_x_limit) == list and type(shift_y_limit) == list and type(rotate_limit) == list and type(scale) == list
+            
+            assert abs(shift_x_limit[0]) <= 1 and abs(shift_y_limit[0]) <= 1 and abs(rotate_limit[0]) <= 1 and abs(rotate_limit[1]) <= 1 and scale[0] >= 0 and scale[1] >= scale[0] and scale[1] >= 1, 'The range for shift_x/y_limit and rotate is [-1 to 1], and [0 to 1] for scale'
+            
+            
     def apply(self, image, **params):
         '''
             Args:
@@ -58,6 +66,7 @@ class SemanticCopyandPaste(A.DualTransform):
         
         
         self.targetClass = random.randint(1,self.nClass-1) # not aug background class
+        print('target = ', self.targetClass)
         
         ret = True
         while ret:
@@ -96,10 +105,12 @@ class SemanticCopyandPaste(A.DualTransform):
         self.c_mask = masks
 
         
-        if self.shift_x_limit is not None: # That we are doing translation
-            masks[..., targetClassForAug] = self.imgTranslate(masks[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
-            
+#         if self.shift_x_limit is not None: # That we are doing translation
+        masks[..., targetClassForAug] = self.imgTranslate(masks[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
         self.translated_mask = masks[..., targetClassForAug]
+        rgb1 = cv2.warpAffine(rgb1, self.translation_matrix, (self.imgCol, self.imgRow))
+        
+        
         # unroll for loop
         rgb2[...,0] = rgb2[...,0] - rgb2[...,0]*self.translated_mask + rgb1[...,0] * self.translated_mask
         rgb2[...,1] = rgb2[...,1] - rgb2[...,1]*self.translated_mask + rgb1[...,1] * self.translated_mask
@@ -121,6 +132,7 @@ class SemanticCopyandPaste(A.DualTransform):
         assert self.translated_mask is not None
         
         mask2_1channel = np.argmax(mask2, axis=2)
+        
         
         newMask = mask2_1channel - mask2_1channel * self.translated_mask + targetClassForAug * self.translated_mask
         
@@ -168,14 +180,18 @@ class SemanticCopyandPaste(A.DualTransform):
                 offset_x_limt: x-axis shift limit [-1,1]
                 offset_y_limt: y-axis shift limit [-1,1]
         '''
-        if self.imgRow == None or self.imgCol == None:
-            self.imgRow, self.imgCol = image.shape
+        self.imgRow, self.imgCol = image.shape
 
         col_shift = random.uniform(offset_x_limit[0], offset_x_limit[1])*self.imgCol
         row_shift = random.uniform(offset_y_limit[0], offset_y_limit[1])*self.imgRow
-        translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
+        rotate_deg= random.uniform(self.rotate_limit[0], self.rotate_limit[1])*360
+        scale_coef= random.uniform(self.scale[0]       , self.scale[1])
         
-        shifted_img = cv2.warpAffine(image, translation_matrix, (self.imgCol, self.imgRow))
+        self.translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
+        rotate_matrix           = cv2.getRotationMatrix2D((self.imgRow//2, self.imgCol//2), rotate_deg, scale_coef)
+        self.translation_matrix += rotate_matrix
+        
+        shifted_img = cv2.warpAffine(image, self.translation_matrix, (self.imgCol, self.imgRow))
 
         return shifted_img
 
