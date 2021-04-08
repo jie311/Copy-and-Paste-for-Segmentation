@@ -9,7 +9,14 @@ import matplotlib.pyplot as plt
 
 class SemanticCopyandPaste(A.DualTransform):
     
-    def __init__(self, nClass, path2rgb, path2mask, always_apply=False, p=0.5):
+    def __init__(self, 
+                 nClass, 
+                 path2rgb, 
+                 path2mask, 
+                 shift_x_limit = None, 
+                 shift_y_limit = None, 
+                 always_apply=False, 
+                 p=0.5):
         super().__init__(always_apply=always_apply, p=p)
         self.nClass     = nClass
         self.rgb_base   = path2rgb
@@ -22,10 +29,16 @@ class SemanticCopyandPaste(A.DualTransform):
         self.c_image    = None # candidate image
         self.c_mask     = None # candidate mask
         self.found      = False
+        self.imgRow     = None  # for image translation
+        self.imgCol     = None  # for image translation
+        self.shift_x_limit = shift_x_limit
+        self.shift_y_limit = shift_y_limit
+        self.translation_matrix = None # Will get it, when self.copy_and_paste_image() derive the matrix
         
         assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
         assert self.nClass > 0, "Incorrect class number"
-
+        if shift_x_limit is not None:
+            assert type(shift_x_limit) == list and type(shift_y_limit) == list
         
     
     def apply(self, image, **params):
@@ -82,11 +95,15 @@ class SemanticCopyandPaste(A.DualTransform):
         self.c_mask = masks
 
         
+        if self.shift_x_limit is not None: # That we are doing translation
+            masks[..., targetClassForAug] = self.imgTranslate(masks[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
+        
         # unroll for loop
         rgb2[...,0] = rgb2[...,0] - rgb2[...,0]*masks[..., targetClassForAug] + rgb1[...,0] * masks[..., targetClassForAug]
         rgb2[...,1] = rgb2[...,1] - rgb2[...,1]*masks[..., targetClassForAug] + rgb1[...,1] * masks[..., targetClassForAug]
         rgb2[...,2] = rgb2[...,2] - rgb2[...,2]*masks[..., targetClassForAug] + rgb1[...,2] * masks[..., targetClassForAug]
-
+        
+        
         return rgb2
 
     
@@ -99,18 +116,25 @@ class SemanticCopyandPaste(A.DualTransform):
                 mask2 = dataloader loaded mask, aug is added to mask2
         '''
         assert mask2.shape[2] == self.nClass # Processed by dataloader, so its a nClass channel
-    
+        assert self.translation_matrix is not None 
+        
         mask2_1channel = np.argmax(mask2, axis=2)
+        
+        
+        if self.shift_x_limit is not None: # That we are doing translation
+            mask1[..., targetClassForAug] = self.imgTranslate(mask1[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
         
         
         newMask = mask2_1channel - mask2_1channel * mask1[..., targetClassForAug] + targetClassForAug * mask1[..., targetClassForAug] 
         
+        
         masks = [(newMask == v) for v in range(self.nClass)] # mask.shape = (x,y,ClassNums)
         masks = np.stack(masks, axis=-1).astype('float')
-           
+        
         # Reset
         self.c_mask = None 
         self.found == False
+        self.translation_matrix = None
         return masks
     
     
@@ -137,3 +161,24 @@ class SemanticCopyandPaste(A.DualTransform):
     def get_transform_init_args_names(self):
         return ("image", "mask")
     
+
+        
+    def imgTranslate(self, image, offset_x_limit, offset_y_limit ):
+        '''
+            Args:
+                image: it can be mask or rgb image
+                offset_x_limt: x-axis shift limit [-1,1]
+                offset_y_limt: y-axis shift limit [-1,1]
+        '''
+        if self.imgRow == None or self.imgCol == None:
+            self.imgRow, self.imgCol = image.shape
+
+        if self.translation_matrix is None:
+            col_shift = random.uniform(offset_x_limit[0], offset_x_limit[1])*self.imgCol
+            row_shift = random.uniform(offset_y_limit[0], offset_y_limit[1])*self.imgRow
+            self.translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
+            
+        shifted_img = cv2.warpAffine(image, self.translation_matrix, (self.imgCol, self.imgRow))
+
+        return shifted_img
+
