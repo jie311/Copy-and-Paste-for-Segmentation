@@ -171,10 +171,9 @@ class SemanticCopyandPaste(A.DualTransform):
         if self.imgRow == None or self.imgCol == None:
             self.imgRow, self.imgCol = image.shape
 
-        if self.translation_matrix is None:
-            col_shift = random.uniform(offset_x_limit[0], offset_x_limit[1])*self.imgCol
-            row_shift = random.uniform(offset_y_limit[0], offset_y_limit[1])*self.imgRow
-            translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
+        col_shift = random.uniform(offset_x_limit[0], offset_x_limit[1])*self.imgCol
+        row_shift = random.uniform(offset_y_limit[0], offset_y_limit[1])*self.imgRow
+        translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
         
         shifted_img = cv2.warpAffine(image, translation_matrix, (self.imgCol, self.imgRow))
 
