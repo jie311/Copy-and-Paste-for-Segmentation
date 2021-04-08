@@ -44,8 +44,7 @@ class SemanticCopyandPaste(A.DualTransform):
         '''
         
         
-        self.targetClass = random.randint(1,self.nClass) # not aug background class
-        
+        self.targetClass = random.randint(1,self.nClass-1) # not aug background class
         ret = True
         while ret:
             candidate = random.randrange(self.nImages)
@@ -57,7 +56,7 @@ class SemanticCopyandPaste(A.DualTransform):
                 self.found       = True
                 self.c_mask      = c_mask
                 self.c_image     = c_image
-                 
+                
         return self.copy_and_paste_image(self.c_image, self.c_mask, image, self.targetClass)
     
     
