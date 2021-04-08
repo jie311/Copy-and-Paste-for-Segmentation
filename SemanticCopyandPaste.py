@@ -33,7 +33,7 @@ class SemanticCopyandPaste(A.DualTransform):
         self.imgCol     = None  # for image translation
         self.shift_x_limit = shift_x_limit
         self.shift_y_limit = shift_y_limit
-        self.translation_matrix = None # Will get it, when self.copy_and_paste_image() derive the matrix
+        self.translated_mask = None
         
         assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
         assert self.nClass > 0, "Incorrect class number"
@@ -58,6 +58,7 @@ class SemanticCopyandPaste(A.DualTransform):
         
         
         self.targetClass = random.randint(1,self.nClass-1) # not aug background class
+        
         ret = True
         while ret:
             candidate = random.randrange(self.nImages)
@@ -97,11 +98,12 @@ class SemanticCopyandPaste(A.DualTransform):
         
         if self.shift_x_limit is not None: # That we are doing translation
             masks[..., targetClassForAug] = self.imgTranslate(masks[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
-        
+            
+        self.translated_mask = masks[..., targetClassForAug]
         # unroll for loop
-        rgb2[...,0] = rgb2[...,0] - rgb2[...,0]*masks[..., targetClassForAug] + rgb1[...,0] * masks[..., targetClassForAug]
-        rgb2[...,1] = rgb2[...,1] - rgb2[...,1]*masks[..., targetClassForAug] + rgb1[...,1] * masks[..., targetClassForAug]
-        rgb2[...,2] = rgb2[...,2] - rgb2[...,2]*masks[..., targetClassForAug] + rgb1[...,2] * masks[..., targetClassForAug]
+        rgb2[...,0] = rgb2[...,0] - rgb2[...,0]*self.translated_mask + rgb1[...,0] * self.translated_mask
+        rgb2[...,1] = rgb2[...,1] - rgb2[...,1]*self.translated_mask + rgb1[...,1] * self.translated_mask
+        rgb2[...,2] = rgb2[...,2] - rgb2[...,2]*self.translated_mask + rgb1[...,2] * self.translated_mask
         
         
         return rgb2
@@ -116,16 +118,11 @@ class SemanticCopyandPaste(A.DualTransform):
                 mask2 = dataloader loaded mask, aug is added to mask2
         '''
         assert mask2.shape[2] == self.nClass # Processed by dataloader, so its a nClass channel
-        assert self.translation_matrix is not None 
+        assert self.translated_mask is not None
         
         mask2_1channel = np.argmax(mask2, axis=2)
         
-        
-        if self.shift_x_limit is not None: # That we are doing translation
-            mask1[..., targetClassForAug] = self.imgTranslate(mask1[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
-        
-        
-        newMask = mask2_1channel - mask2_1channel * mask1[..., targetClassForAug] + targetClassForAug * mask1[..., targetClassForAug] 
+        newMask = mask2_1channel - mask2_1channel * self.translated_mask + targetClassForAug * self.translated_mask
         
         
         masks = [(newMask == v) for v in range(self.nClass)] # mask.shape = (x,y,ClassNums)
@@ -135,6 +132,7 @@ class SemanticCopyandPaste(A.DualTransform):
         self.c_mask = None 
         self.found == False
         self.translation_matrix = None
+        self.translated_mask = None
         return masks
     
     
@@ -176,9 +174,9 @@ class SemanticCopyandPaste(A.DualTransform):
         if self.translation_matrix is None:
             col_shift = random.uniform(offset_x_limit[0], offset_x_limit[1])*self.imgCol
             row_shift = random.uniform(offset_y_limit[0], offset_y_limit[1])*self.imgRow
-            self.translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
-            
-        shifted_img = cv2.warpAffine(image, self.translation_matrix, (self.imgCol, self.imgRow))
+            translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
+        
+        shifted_img = cv2.warpAffine(image, translation_matrix, (self.imgCol, self.imgRow))
 
         return shifted_img
 
