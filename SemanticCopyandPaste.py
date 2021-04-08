@@ -44,30 +44,26 @@ class SemanticCopyandPaste(A.DualTransform):
         '''
         
         
-        while self.targetClass == 0:
-            self.targetClass = random.randrange(self.nClass)
-                
+        self.targetClass = random.randint(1,self.nClass) # not aug background class
+        
         ret = True
         while ret:
             candidate = random.randrange(self.nImages)
-            c_image   = cv2.imread(os.path.join(self.rgb_base, self.rgbs[candidate]))
-            c_image   = cv2.cvtColor(c_image, cv2.COLOR_BGR2RGB)
             c_mask    = cv2.imread(os.path.join(self.mask_base, self.masks[candidate]))
             if self.target_class_in_image(c_mask, self.targetClass):
-                ret = False
+                c_image   = cv2.imread(os.path.join(self.rgb_base, self.rgbs[candidate]))
+                c_image   = cv2.cvtColor(c_image, cv2.COLOR_BGR2RGB)
+                ret              = False
                 self.found       = True
                 self.c_mask      = c_mask
                 self.c_image     = c_image
-                
-        
+                 
         return self.copy_and_paste_image(self.c_image, self.c_mask, image, self.targetClass)
     
     
     
     def apply_to_mask(self, mask, **params):
         assert self.found == True
-        assert self.c_mask is not None # copy_and_paste_image has to be ran first to pass this
-    
         return self.copy_and_paste_mask(self.c_mask, mask, self.targetClass)
     
 
@@ -86,8 +82,11 @@ class SemanticCopyandPaste(A.DualTransform):
         masks = np.stack(masks, axis=-1).astype('float') # mask.shape = (x,y,ClassNums)
         self.c_mask = masks
 
-        for i in range(3): #r,g,b channels
-            rgb2[...,i] = rgb2[...,i] - rgb2[...,i]*masks[..., targetClassForAug] + rgb1[...,i] * masks[..., targetClassForAug]
+        
+        # unroll for loop
+        rgb2[...,0] = rgb2[...,0] - rgb2[...,0]*masks[..., targetClassForAug] + rgb1[...,0] * masks[..., targetClassForAug]
+        rgb2[...,1] = rgb2[...,1] - rgb2[...,1]*masks[..., targetClassForAug] + rgb1[...,1] * masks[..., targetClassForAug]
+        rgb2[...,2] = rgb2[...,2] - rgb2[...,2]*masks[..., targetClassForAug] + rgb1[...,2] * masks[..., targetClassForAug]
 
         return rgb2
 
@@ -104,8 +103,6 @@ class SemanticCopyandPaste(A.DualTransform):
     
         mask2_1channel = np.argmax(mask2, axis=2)
         
-#         mask1 = [(mask1[..., 0] == v) for v in range(self.nClass)]
-#         mask1 = np.stack(mask1, axis=-1).astype('float')
         
         newMask = mask2_1channel - mask2_1channel * mask1[..., targetClassForAug] + targetClassForAug * mask1[..., targetClassForAug] 
         
