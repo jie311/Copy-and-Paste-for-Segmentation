@@ -37,8 +37,8 @@ class SemanticCopyandPaste(A.DualTransform):
         self.shift_y_limit = shift_y_limit
         self.rotate_limit  = rotate_limit
         self.scale         = scale
+        self.transformation_matrix = None
         self.translated_mask    = None
-        self.translation_matrix = None
         self.counter            = 0
         
         assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
@@ -49,6 +49,13 @@ class SemanticCopyandPaste(A.DualTransform):
             assert abs(shift_x_limit[0]) <= 1 and abs(shift_y_limit[0]) <= 1 and abs(rotate_limit[0]) <= 1 and abs(rotate_limit[1]) <= 1 and scale[0] >= 0 and scale[1] >= scale[0] and scale[1] >= 1, 'The range for shift_x/y_limit and rotate is [-1 to 1], and [0 to 1] for scale'
             
             
+            
+    
+    
+    
+    
+    
+    
     def apply(self, image, **params):
         '''
             Args:
@@ -84,6 +91,12 @@ class SemanticCopyandPaste(A.DualTransform):
     
     
     
+    
+    
+    
+    
+    
+    
     def apply_to_mask(self, mask, **params):
         assert self.found == True
         return self.copy_and_paste_mask(self.c_mask, mask, self.targetClass)
@@ -94,8 +107,8 @@ class SemanticCopyandPaste(A.DualTransform):
     # Augmentation will be added to rgb2 (extract content from rgb1)
     # Mask1 is need to know where to extract pixels for color image copy and paste
     def copy_and_paste_image(self, rgb1, mask1, rgb2, targetClassForAug):
-        assert rgb1 is not None
-        assert rgb2 is not None
+        assert rgb1  is not None
+        assert rgb2  is not None
         assert mask1 is not None
         assert mask1.shape[2] == 3 # We imread it without further process, so its a 3 channel
         
@@ -105,20 +118,21 @@ class SemanticCopyandPaste(A.DualTransform):
         self.c_mask = masks
 
         
-#         if self.shift_x_limit is not None: # That we are doing translation
-        masks[..., targetClassForAug] = self.imgTranslate(masks[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
+        masks[..., targetClassForAug] = self.imgTransform(masks[..., targetClassForAug], self.shift_x_limit, self.shift_y_limit)
         self.translated_mask = masks[..., targetClassForAug]
-        rgb1 = cv2.warpAffine(rgb1, self.translation_matrix, (self.imgCol, self.imgRow))
+        rgb1 = cv2.warpAffine(rgb1, self.transformation_matrix, (self.imgCol, self.imgRow))
         
-        
-        # unroll for loop
-        rgb2[...,0] = rgb2[...,0] - rgb2[...,0]*self.translated_mask + rgb1[...,0] * self.translated_mask
-        rgb2[...,1] = rgb2[...,1] - rgb2[...,1]*self.translated_mask + rgb1[...,1] * self.translated_mask
-        rgb2[...,2] = rgb2[...,2] - rgb2[...,2]*self.translated_mask + rgb1[...,2] * self.translated_mask
-        
-        
-        return rgb2
+        # int so no overflow
+        rgb2 = rgb2 - (rgb2-rgb1).astype('int') * np.stack((self.translated_mask,self.translated_mask,self.translated_mask),axis=2).astype('int')
 
+        
+        
+        return rgb2.astype('uint8')
+
+    
+    
+    
+    
     
     
     
@@ -133,17 +147,15 @@ class SemanticCopyandPaste(A.DualTransform):
         
         mask2_1channel = np.argmax(mask2, axis=2)
         
+        newMask = mask2_1channel - (mask2_1channel - targetClassForAug) * self.translated_mask
         
-        newMask = mask2_1channel - mask2_1channel * self.translated_mask + targetClassForAug * self.translated_mask
-        
-        
-        masks = [(newMask == v) for v in range(self.nClass)] # mask.shape = (x,y,ClassNums)
-        masks = np.stack(masks, axis=-1).astype('float')
+        masks   = [(newMask == v) for v in range(self.nClass)] # mask.shape = (x,y,ClassNums)
+        masks   = np.stack(masks, axis=-1).astype('float')
         
         # Reset
         self.c_mask = None 
         self.found == False
-        self.translation_matrix = None
+        self.transformation_matrix = None
         self.translated_mask = None
         return masks
     
@@ -154,26 +166,19 @@ class SemanticCopyandPaste(A.DualTransform):
     
     # We imread the mask, so it's a 3-channel mask (not one-hot encoded)
     def target_class_in_image(self, mask, targetClassIdx):
-        m   = mask[..., 0]
-        tmp = (m==targetClassIdx)
-        if np.sum(tmp) > self.threshold: #hard coded pixel threshold
+    
+        #hard coded pixel threshold
+        if np.sum(mask[..., 0] == targetClassIdx) > self.threshold: 
             return True
-        else:
-            return False
-    
-    
-    def apply_to_bbox(self, bbox, **params):
-        return bbox
-
-    def apply_to_keypoint(self, keypoint, **params):
-        return keypoint
-
-    def get_transform_init_args_names(self):
-        return ("image", "mask")
-    
-
         
-    def imgTranslate(self, image, offset_x_limit, offset_y_limit ):
+        return False
+    
+    
+    
+    
+    
+    
+    def imgTransform(self, image, offset_x_limit, offset_y_limit ):
         '''
             Args:
                 image: it can be mask or rgb image
@@ -187,11 +192,30 @@ class SemanticCopyandPaste(A.DualTransform):
         rotate_deg= random.uniform(self.rotate_limit[0], self.rotate_limit[1])*360
         scale_coef= random.uniform(self.scale[0]       , self.scale[1])
         
-        self.translation_matrix = np.float32([[1,0,col_shift], [0,1,row_shift]])
-        rotate_matrix           = cv2.getRotationMatrix2D((self.imgRow//2, self.imgCol//2), rotate_deg, scale_coef)
-        self.translation_matrix += rotate_matrix
+        self.transformation_matrix = cv2.getRotationMatrix2D((self.imgRow//2, self.imgCol//2), rotate_deg, scale_coef)
+        self.transformation_matrix[0,2] += col_shift
+        self.transformation_matrix[1,2] += row_shift
         
-        shifted_img = cv2.warpAffine(image, self.translation_matrix, (self.imgCol, self.imgRow))
+        return cv2.warpAffine(image, self.transformation_matrix, (self.imgCol, self.imgRow))
 
-        return shifted_img
 
+    
+    
+    
+    
+    
+    
+    
+
+    def apply_to_bbox(self, bbox, **params):
+        return bbox
+
+    def apply_to_keypoint(self, keypoint, **params):
+        return keypoint
+
+    def get_transform_init_args_names(self):
+        return ("image", "mask")
+    
+
+        
+    
