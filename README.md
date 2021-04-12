@@ -6,6 +6,12 @@ Link to the [paper](https://arxiv.org/abs/2012.07177) </br>
 </br>
 </br>
 
+### Notice
+- If you had colored masks rather than one-hot encoded mask, you can use [repo](https://github.com/WeiChihChern/RGBMask2Gray) to convert colored mask to one-hot encoded mask before using this repo.
+</br>
+
+
+
 ### Current Status
 - Tested. Works with albumentations. (See demo [here](https://github.com/WeiChihChern/copy-and-paste/blob/main/Example/Demo.ipynb "here"))
 - Current implementation contains copy then paste only. Since semantic segmentation annotation may not be labeled as instance segmentation (instance wise annotated).
