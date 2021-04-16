@@ -7,7 +7,7 @@ Link to the [paper](https://arxiv.org/abs/2012.07177) </br>
 </br>
 
 ### Notice
-- If you had colored masks rather than one-hot encoded mask, you can use [repo](https://github.com/WeiChihChern/RGBMask2Gray) to convert colored mask to one-hot encoded mask before using this repo.
+- If you had colored masks rather than class index valued mask, you can use [repo](https://github.com/WeiChihChern/RGBMask2Gray) to convert colored mask to one-hot encoded mask before using this repo.
 </br>
 
 
