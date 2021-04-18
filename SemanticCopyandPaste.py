@@ -112,6 +112,11 @@ class SemanticCopyandPaste(A.DualTransform):
         assert mask1 is not None
         assert mask1.shape[2] == 3 # We imread it without further process, so its a 3 channel
         
+        if rgb2.shape != rgb1.shape:
+            r, c, _ = rgb2.shape
+            rgb1  = cv2.resize(rgb1, (c,r), interpolation = cv2.INTER_NEAREST)
+            mask1 = cv2.resize(mask1, (c,r), interpolation = cv2.INTER_NEAREST)
+        
         tmp   = mask1[...,1] # All 3 channels have same content, we take 1 to process
         masks = [(tmp == v) for v in range(self.nClass)] 
         masks = np.stack(masks, axis=-1).astype('float') # mask.shape = (x,y,ClassNums)
