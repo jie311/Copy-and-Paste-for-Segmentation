@@ -17,6 +17,7 @@ class SemanticCopyandPaste(A.DualTransform):
                  shift_y_limit = [0,0], 
                  rotate_limit  = [0,0],
                  scale         = [0,0],
+                 class_weights = [],
                  always_apply  = False, 
                  p=0.5):
         super().__init__(always_apply=always_apply, p=p)
@@ -38,14 +39,33 @@ class SemanticCopyandPaste(A.DualTransform):
         self.rotate_limit  = rotate_limit
         self.scale         = scale
         self.transformation_matrix = None
-        self.translated_mask    = None
-        self.counter            = 0
+        self.translated_mask = None
+        self.counter         = 0
+        self.class_counter   = np.zeros(self.nClass, dtype=np.int64)
         
-        assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
-        assert self.nClass > 0, "Incorrect class number"
-        if shift_x_limit is not None:
-            assert type(shift_x_limit) == list and type(shift_y_limit) == list and type(rotate_limit) == list and type(scale) == list
+        # Class weights is used to control what classes to be augmented more than the others
+        self.class_weights   = [abs(ele) for ele in class_weights]
+        self.class_pool      = []
+        
+        if not class_weights:
+            for i in range(1,nClass):
+                for j in range(np.int(self.class_weights[i])):
+                    self.class_pool.append(i)
+        else:
+            self.class_weights = np.round(self.class_weights / np.sum(self.class_weights) * 100) # Normalized
+            assert len(class_weights) == nClass, "class_weights' length != nClass, nClass should also include the background class."
             
+            for i in range(nClass):
+                for j in range(np.int(self.class_weights[i])):
+                    self.class_pool.append(i)
+            
+            
+        # Params checking
+        assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
+        assert self.nClass     > 0,               "Incorrect class number"
+        
+        if shift_x_limit is not None:
+            assert type(shift_x_limit) == list and type(shift_y_limit) == list and type(rotate_limit) == list and type(scale) == list      
             assert abs(shift_x_limit[0]) <= 1 and abs(shift_y_limit[0]) <= 1 and abs(rotate_limit[0]) <= 1 and abs(rotate_limit[1]) <= 1 and scale[0] >= 0 and scale[1] >= scale[0] and scale[1] >= 1, 'The range for shift_x/y_limit and rotate is [-1 to 1], and [0 to 1] for scale'
             
             
@@ -64,17 +84,15 @@ class SemanticCopyandPaste(A.DualTransform):
            This function will first randomly generate a class that being copied (Exclude 0, which is the background class). Then randomly picks a mask via provided path, and search whether it contains the previously picked target class. Keep randomly picks a new mask until a match is found. Finally start doing copy and paste process.
 
            Since semantic segmentation's annotation may not be labeled in the same way as instance segmentation therefore currently we copy and paste entire mask without further processing.
-
-           TODO:
-               1. Add zoom in and zoom out support before pasting (large scale jittering from paper)
-               2. Mask shifting before pasting
-               3.
         '''
         
+               
         
-        self.targetClass = random.randint(1,self.nClass-1) # not aug background class
-#         print('target = ', self.targetClass)
+
+        self.targetClass = random.choice(self.class_pool)
+        print(self.targetClass)
         
+        # Finding candidates with the target class
         ret = True
         while ret:
             candidate = random.randrange(self.nImages)
