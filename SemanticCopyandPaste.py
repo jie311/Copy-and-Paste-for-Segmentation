@@ -18,7 +18,9 @@ class SemanticCopyandPaste(A.DualTransform):
                  rotate_limit  = [0,0],
                  scale         = [0,0],
                  class_weights = [],
-                 always_apply  = False, 
+                 always_apply  = False,
+                 show_stats    = False,
+                 auto_weights  = False,
                  p=0.5):
         super().__init__(always_apply=always_apply, p=p)
         self.nClass     = nClass
@@ -46,19 +48,44 @@ class SemanticCopyandPaste(A.DualTransform):
         # Class weights is used to control what classes to be augmented more than the others
         self.class_weights   = [abs(ele) for ele in class_weights]
         self.class_pool      = []
+        self.img_pool        = np.zeros((self.nClass, len(self.masks))) - 1 # Use -1 as the flag of empty
+        self.class_pixels_statistics = np.zeros((self.nClass,1), dtype=np.float64)
+        self.auto_weights    = auto_weights
         
-        if not class_weights:
-            for i in range(1,nClass):
-                for j in range(np.int(self.class_weights[i])):
-                    self.class_pool.append(i)
-        else:
-            self.class_weights = np.round(self.class_weights / np.sum(self.class_weights) * 100) # Normalized
-            assert len(class_weights) == nClass, "class_weights' length != nClass, nClass should also include the background class."
-            
+        
+        # Image pool initialization for fast image lookup
+        # Go through all masks, and find out what class(es) each mask has
+        class_count_tmp = np.zeros((self.nClass, 1), dtype=np.int)
+        for i in range(len(self.masks)):
+            c_mask = cv2.imread(os.path.join(self.mask_base, self.masks[i]))
+            for j in range(self.nClass):
+                if self.target_class_in_image(c_mask, j):
+                    self.img_pool[j, class_count_tmp[j, 0]] = i
+                    class_count_tmp[j, 0] += 1
+
+        
+        # Initialization for weighted class augmentation
+        if self.auto_weights:
+            print('- Copy and Paste: Auto weights calculation used -')
+            tmp = np.copy(self.class_pixels_statistics)
+            tmp = 1 / tmp
+            tmp[0,0] = 0
+            self.class_weights = np.round(tmp / np.sum(tmp) * 100) # Normalized
             for i in range(nClass):
                 for j in range(np.int(self.class_weights[i])):
                     self.class_pool.append(i)
-            
+        else:
+            if not class_weights:
+                print('- Copy and Paste: Using equal weights for all classes (background not included) -')
+                for i in range(1,self.nClass): self.class_pool.append(i)
+            else:
+                print('- Copy and Paste: Using user defined class weights -')
+                self.class_weights = np.round(self.class_weights / np.sum(self.class_weights) * 100) # Normalized
+                assert len(class_weights) == nClass, "class_weights' length != nClass, nClass should also include the background class."
+
+                for i in range(nClass):
+                    for j in range(np.int(self.class_weights[i])):
+                        self.class_pool.append(i)
             
         # Params checking
         assert len(self.rgbs) == len(self.masks), "rgb path's file count != mask path's file count"
@@ -69,9 +96,7 @@ class SemanticCopyandPaste(A.DualTransform):
             assert abs(shift_x_limit[0]) <= 1 and abs(shift_y_limit[0]) <= 1 and abs(rotate_limit[0]) <= 1 and abs(rotate_limit[1]) <= 1 and scale[0] >= 0 and scale[1] >= scale[0] and scale[1] >= 1, 'The range for shift_x/y_limit and rotate is [-1 to 1], and [0 to 1] for scale'
             
             
-            
-    
-    
+        if show_stats: print('Pixel Count for Each Class: \n', self.class_pixels_statistics)
     
     
     
@@ -90,20 +115,18 @@ class SemanticCopyandPaste(A.DualTransform):
         
 
         self.targetClass = random.choice(self.class_pool)
-        print(self.targetClass)
         
         # Finding candidates with the target class
-        ret = True
-        while ret:
-            candidate = random.randrange(self.nImages)
-            c_mask    = cv2.imread(os.path.join(self.mask_base, self.masks[candidate]))
-            if self.target_class_in_image(c_mask, self.targetClass):
-                c_image   = cv2.imread(os.path.join(self.rgb_base, self.rgbs[candidate]))
-                c_image   = cv2.cvtColor(c_image, cv2.COLOR_BGR2RGB)
-                ret              = False
-                self.found       = True
-                self.c_mask      = c_mask
-                self.c_image     = c_image
+        ret = -1
+        while ret == -1:
+            ret = int(random.choice(self.img_pool[self.targetClass, :]))
+        c_image   = cv2.imread(os.path.join(self.rgb_base, self.rgbs[ret]))
+        c_mask    = cv2.imread(os.path.join(self.mask_base, self.masks[ret]))
+        c_image   = cv2.cvtColor(c_image, cv2.COLOR_BGR2RGB)
+        self.found       = True
+        self.c_mask      = c_mask
+        self.c_image     = c_image
+
                 
         return self.copy_and_paste_image(self.c_image, self.c_mask, image, self.targetClass)
     
@@ -134,7 +157,7 @@ class SemanticCopyandPaste(A.DualTransform):
             r, c, _ = rgb2.shape
             rgb1  = cv2.resize(rgb1, (c,r), interpolation = cv2.INTER_NEAREST)
             mask1 = cv2.resize(mask1, (c,r), interpolation = cv2.INTER_NEAREST)
-        
+          
         tmp   = mask1[...,1] # All 3 channels have same content, we take 1 to process
         masks = [(tmp == v) for v in range(self.nClass)] 
         masks = np.stack(masks, axis=-1).astype('float') # mask.shape = (x,y,ClassNums)
@@ -191,7 +214,9 @@ class SemanticCopyandPaste(A.DualTransform):
     def target_class_in_image(self, mask, targetClassIdx):
     
         #hard coded pixel threshold
-        if np.sum(mask[..., 0] == targetClassIdx) > self.threshold: 
+        s = np.sum(mask[..., 0] == targetClassIdx)
+        self.class_pixels_statistics[targetClassIdx, 0] += s
+        if s > self.threshold: 
             return True
         
         return False
@@ -212,7 +237,7 @@ class SemanticCopyandPaste(A.DualTransform):
 
         col_shift = random.uniform(offset_x_limit[0], offset_x_limit[1])*self.imgCol
         row_shift = random.uniform(offset_y_limit[0], offset_y_limit[1])*self.imgRow
-        rotate_deg= random.uniform(self.rotate_limit[0], self.rotate_limit[1])*360
+        rotate_deg= random.uniform(self.rotate_limit[0], self.rotate_limit[1])*180
         scale_coef= random.uniform(self.scale[0]       , self.scale[1])
         
         self.transformation_matrix = cv2.getRotationMatrix2D((self.imgRow//2, self.imgCol//2), rotate_deg, scale_coef)
