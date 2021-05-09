@@ -17,6 +17,7 @@ Link to the [paper](https://arxiv.org/abs/2012.07177) </br>
 - Current implementation contains copy then paste only. Since semantic segmentation annotation may not be labeled as instance segmentation (instance wise annotated).
 - Paste with transaltion (x,y shift) supported.
 - Rotation and Scaling supported.
+- Augmentation probability control added, so you can ignore/increase augmentation to certain class(es) (5/8/2021).
 
 ### Augmentation Flowchart:
 1.  Put `SemanticCopyandPaste()` before other albumentations augmentation (See demo [here](https://github.com/WeiChihChern/copy-and-paste/blob/main/Example/Demo.ipynb "here"))
