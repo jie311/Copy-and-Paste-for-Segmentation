@@ -58,6 +58,7 @@ class SemanticCopyandPaste(A.DualTransform):
         class_count_tmp = np.zeros((self.nClass, 1), dtype=np.int)
         for i in range(len(self.masks)):
             c_mask = cv2.imread(os.path.join(self.mask_base, self.masks[i]))
+            assert c_mask is not None, "Your image directories may contain some non-image hidden files. Image is empty!"
             for j in range(self.nClass):
                 if self.target_class_in_image(c_mask, j):
                     self.img_pool[j, class_count_tmp[j, 0]] = i
@@ -212,7 +213,7 @@ class SemanticCopyandPaste(A.DualTransform):
     
     # We imread the mask, so it's a 3-channel mask (not one-hot encoded)
     def target_class_in_image(self, mask, targetClassIdx):
-    
+        
         #hard coded pixel threshold
         s = np.sum(mask[..., 0] == targetClassIdx)
         self.class_pixels_statistics[targetClassIdx, 0] += s
